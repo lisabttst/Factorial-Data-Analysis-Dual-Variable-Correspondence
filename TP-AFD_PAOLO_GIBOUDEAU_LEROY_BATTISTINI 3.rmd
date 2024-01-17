@@ -1,0 +1,275 @@
+---
+title: "TP AFD"
+author: 
+  - Jules PAOLO
+  - Antoine LEROY
+  - Coralie GIBOUDEAU
+  - Lisa BATTISTINI
+output:
+  html_document: default
+  pdf_document: default
+---
+
+#### [**Introduction.**]{.underline}
+
+Description de la fonction AFD(data, Y_qual, Y_ind, diag_V=TRUE, norm=TRUE) du script AFD.R :
+
+**Retourne :**
+
+g_k : centres de gravités pour chacun des groupes.
+
+B : matrice between.
+
+W : matrice within.
+
+V : matrice de covariance globale.
+
+v : vecteurs propres de la matrice (V-1)B ou (W-1)B.
+
+values : valeurs propres de la matrice (V-1)B ou (W-1)B.
+
+vectors : vecteurs propres de la matrice utilisée pour simplifier la diagonalisation.
+
+**Arguments :**
+
+data : la matrice des variables quantitatives + variable quantitative en dernière colonne
+
+Y_qual : le vecteur regroupant l'ensemble des classes de la variable qualitative
+
+Y_ind : l'indice de la colone de la variable quantitative
+
+Diag_V : diagonaliser (V-1)B par défaut, sinon (W-1)B
+
+Norm : normalise la matrice par défaut
+
+#### **QUESTION N°1**
+
+```{r}
+library(matlib)
+library(FactoMineR)
+library(factoextra)
+install.packages("FactoMineR")
+install.packages("ggplot2")
+
+source("AFD.R")
+
+#### Lit les données et le retraite
+# p : nombre de variables
+# n : nombre d'individus
+# k : les sous-populations
+#
+data = read.csv("chienloup.csv", sep=";")
+
+p <- dim(data)[2]
+n <- dim(data)[1]
+k <- c("CHIEN", "LOUP")
+
+for (i in 3:p-1) {
+  data[,i] <- as.numeric(data[,i])
+}
+
+# Moyennes des variables sur l'ensemble de la population
+g <- rep(0, p-2)
+for (i in 2:(p-1)) {
+  g[i-1] <- mean(data[,i])
+}
+
+# Moyennes des variables sur chaque sous-population
+g_k <- matrix(0, 2, p-2)
+colnames(g_k) <- colnames(data[2:7])
+rownames(g_k) <- k
+
+for (j in 2:(p-1)) {
+  g_k[1,][j-1] <- mean(data[data$GENRE == "CHIEN",][,j])
+  g_k[2,][j-1] <- mean(data[data$GENRE == "LOUP",][,j])
+}
+
+# Matrice de variance inter-classse B
+B <- matrix(0, p-2, p-2)
+for (i in 1:2) {
+  n_k <- dim(data[data$GENRE == k[i],])[1]
+  B <- B + (n_k/n) * (g_k[i,] - g) %*% t(g_k[i,] - g)
+}
+
+# Matrice de variance/covariance des groupes intra-classes W
+n_c <- nrow(data[data$GENRE == "CHIEN",])
+n_l <- nrow(data[data$GENRE == "LOUP",])
+
+V_1 <- matrix(0, p-2, p-2)
+for (row in 1:n_c) {
+  n_k <- dim(data[data$GENRE == "CHIEN",])[1]
+  x_i <- as.matrix(data[data$GENRE == "CHIEN",][row, ][2:7])
+  V_1 <- V_1 + (1/n_k) * t(x_i - g_k[1,]) %*% (x_i - g_k[1,])
+}
+
+V_2 <- matrix(0, p-2, p-2)
+for (row in 1:n_l) {
+  n_k <- dim(data[data$GENRE == "LOUP",])[1]
+  x_i <- as.matrix(data[data$GENRE == "LOUP",][row, ][2:7])
+  V_2 <- V_2 + (1/n_k) * t(x_i - g_k[2,]) %*% (x_i - g_k[2,])
+}
+
+W <- (1/n)*(n_c*V_1 + n_l*V_2)
+
+# Matrice de variance totale
+V <- B + W
+
+# Matrices test pour vérifier la validité de l'égalité V = B + W
+Vtest <- matrix(0, p-2, p-2)
+for (i in 1:n) {
+  x_i = as.matrix(data[i,][2:7])
+  Vtest <- Vtest + (1/n) * (t(x_i - g) %*% (x_i - g))
+}
+print("Vtest")
+print(Vtest)
+print('V')
+print(V)
+
+afd_test <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=TRUE, norm=FALSE)
+print('B')
+print(B)
+print('B AFD test')
+print(afd_test$B)
+print('B AFD test')
+
+print('W')
+print(W)
+print('W AFD test')
+print(afd_test$W)
+
+inv_V <- solve(V)
+d <- inv_V %*% B
+d
+```
+
+Les variables initiales ne partagent pas bien les groupes en classes distinctes dans l'exemple donné. Puisque les valeurs de d sont très faibles, on en déduit que la proportion de variance expliquée par la matrice B between est très faible et que les individus ne sont donc pas tassés en différents groupes éloignés, mais plutôt tous mélangés. La variance intra-groupe est forte, comparée à la variance inter-groupe.
+
+#### QUESTION N°2
+
+```{r}
+# Vérification de la dimension des matrices
+dim_V_inv <- dim(inv_V)
+dim_B <- dim(B)
+
+print("Dimensions de V^-1 :")
+print(dim_V_inv)
+
+print("Dimensions de B :")
+print(dim_B)
+
+# Analyse des caractéristiques des matrices
+print("Caractéristiques de V^-1 :")
+print(summary(inv_V))
+print("Caractéristiques de B :")
+print(summary(B))
+
+# Calcul de l'inverse de V
+inv_V <- solve(V)
+
+# Produit de V^-1 et B pour obtenir V^-1B
+V_inv_B <- inv_V %*% B
+
+# Vérification de la symétrie de V^-1B
+is_symmetric <- all(V_inv_B == t(V_inv_B))
+
+# Diagonalisation de V^-1B si elle est symétrique
+if (is_symmetric) {
+  eigen_values <- eigen(V_inv_B)$values
+  eigen_vectors <- eigen(V_inv_B)$vectors
+  print(eigen_values)
+  print(eigen_vectors)
+} else {
+  print("La matrice V^-1B n'est pas symétrique et ne peut donc pas être diagonalisée directement.")
+}
+
+# Affichage pour vérifier la symétrie
+print("La matrice V^-1B est-elle symétrique ?")
+print(is_symmetric)
+```
+
+D'après les résultats obtenus, les matrices V-1 et B ont toutes deux une dimension de 6x6, ce qui correspond au nombre de variables quantitatives analysées. La matrice V-1 présente une variabilité significative dans ses éléments. La matrice B montre également des valeurs variables, suggérant des différences notables entre les groupes de Chiens et de Loups pour certaines mesures. Toutefois, la matrice V-1B n'est pas symétrique et ne peut donc pas être diagonalisée directement, ce qui justifie l'utilisation de méthodes alternatives pour l'analyse discriminante.
+
+#### QUESTION N°3, 4 et 5
+
+On diagobalise la matrice (V-1)B dans le code script AFD.R
+
+```{r}
+# Fonction dudi.mix(ade4)
+quantitative_vars <- data[2:7]
+qualitative_vars <- data[,8]
+cara <- cbind(qualitative_vars, quantitative_vars)
+cara[, 2:7] <- sapply(cara[, 2:7], as.numeric)
+
+# Exécution de FAMD
+famd_result <- FAMD(cara)
+summary(famd_result)
+
+# Fonction développée
+afd_V <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=TRUE, norm=FALSE)
+
+afd_V$values
+```
+
+```{r}
+
+#Question 5
+afd_W <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=FALSE, norm=FALSE)
+afd_V$v
+afd_W$v
+afd_V$values
+afd_W$values
+```
+
+La différence dans les vecteurs propres entre (V-1)B et (W-1)B suggère que les axes qui maximisent la séparation entre les groupes sont différents selon que l'on prenne en compte la variance totale ou la variance intra-classes. Les valeurs propres montrent que l'axe 1 est plus important que l'autre pour expliquer la variance entre les groupes.
+
+#### QUESTION N°6
+
+```{r}
+
+# Projection des données sur les axes factoriels
+eigen_vectors_real <- Re(eigen_vectors_reg)
+
+projected_data <- as.matrix(data[, 2:7]) %*% eigen_vectors_real
+
+# Calcul des corrélations entre les données projetées et les variables originales
+correlations <- cor(projected_data, data[,2:7])
+
+# Affichage des corrélations
+print('correlations')
+print(correlations)
+
+# Affichage des valeurs propres pour chaque axe factoriel
+print('valeurs afd')
+print(afd_V$values) 
+
+```
+
+L'axe avec la plus grande valeur propre (1.5444476) indique qu'il capture efficacement l'information significative des variables, ce qui est conforme à l'importance indiquée par sa valeur propre. Bien la valeur du deuxieme axe soit inférieure à celle du premier axe, elle reste significative.
+
+#### QUESTION N°7
+
+```{r}
+print(afd_V$v[,1])
+```
+
+#### QUESTION N°8
+
+```{r}
+
+afd.8 <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=TRUE, norm=TRUE)
+
+```
+
+Les résultats suggèrent que le premier axe factoriel est particulièrement important dans la distinction entre les groupes CHIEN et LOUP dans nos données centrées. Le groupe LOUP semble avoir une influence plus marquée sur la définition de cet axe, ce qui pourrait être dû à des différences plus prononcées dans les variables mesurées pour ce groupe par rapport au groupe CHIEN.
+
+#### QUESTION N°9
+
+```{r}
+
+afd.norm <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=TRUE, norm=TRUE)
+afd.notnorm <- AFD(data[2:8], c("CHIEN", "LOUP"), 7, diag_V=TRUE, norm=FALSE)
+print('AFD normalisé')
+print(afd.norm$v[,1])
+print('AFD non normalisé')
+print(afd.notnorm$v[,1])
+```
